@@ -32,6 +32,17 @@ class CodexApp:
             stderr=subprocess.DEVNULL,
         )
 
+    def is_running(self) -> bool:
+        if sys.platform != "darwin":
+            return False
+        result = subprocess.run(
+            ["pgrep", "-x", "Codex"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.returncode == 0
+
     def open(self) -> None:
         if sys.platform == "darwin":
             subprocess.run(["open", "-a", "Codex"], check=False)

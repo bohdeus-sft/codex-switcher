@@ -33,9 +33,9 @@ class LimitWindow:
         if not payload:
             return None
         return cls(
-            used_percent=_as_float(payload.get("usedPercent")),
-            window_duration_mins=_as_int(payload.get("windowDurationMins")),
-            resets_at=_as_int(payload.get("resetsAt")),
+            used_percent=_as_float(_first_present(payload, "usedPercent", "used_percent")),
+            window_duration_mins=_as_int(_first_present(payload, "windowDurationMins", "window_duration_mins")),
+            resets_at=_as_int(_first_present(payload, "resetsAt", "resets_at", "resetAt", "reset_at")),
         )
 
 
@@ -76,3 +76,10 @@ def _as_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _first_present(payload: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in payload:
+            return payload[key]
+    return None

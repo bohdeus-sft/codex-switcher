@@ -143,17 +143,29 @@ class CodexSwitcherTui:
             self._pause()
             return
         delay = IntPrompt.ask("Delay between accounts, seconds", default=self.config.refresh_delay_seconds)
+        codex_is_running = self.codex_app.is_running()
         for index, session in enumerate(sessions, start=1):
-            self._refresh_one(session)
+            if codex_is_running and session.active:
+                self.console.print(
+                    "[yellow]Skipped active account because Codex.app is running.[/yellow] "
+                    "[dim]Close Codex.app or refresh this account manually.[/dim]"
+                )
+            else:
+                self._refresh_one(session, preserve_cache_on_error=True)
             if index < len(sessions):
                 self.console.print(f"[dim]Waiting {delay}s before next account...[/dim]")
                 time.sleep(max(0, delay))
         self._pause()
 
-    def _refresh_one(self, session: Session) -> None:
+    def _refresh_one(self, session: Session, preserve_cache_on_error: bool = False) -> None:
         self.console.print(f"Reading limits for [bold]{session.email}[/bold] ({session.display_category})...")
         snapshot = self.limit_reader.read(session)
-        self.snapshots[self.store.cache_key(session)] = snapshot
+        cache_key = self.store.cache_key(session)
+        if snapshot.error and preserve_cache_on_error and cache_key in self.snapshots:
+            self.console.print(f"[yellow]Limit read failed; keeping cached value:[/yellow] {snapshot.error}")
+            return
+
+        self.snapshots[cache_key] = snapshot
         self.store.save_cache(self.snapshots)
         if snapshot.error:
             self.console.print(f"[red]Limit read failed:[/red] {snapshot.error}")

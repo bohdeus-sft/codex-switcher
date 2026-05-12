@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from codex_switcher.config import Config
-from codex_switcher.storage import SessionStore, sanitize_part
+from codex_switcher.models import LimitWindow
+from codex_switcher.storage import SessionStore, sanitize_part, snapshot_from_json
 
 
 class SessionStoreTest(unittest.TestCase):
@@ -36,6 +37,26 @@ class SessionStoreTest(unittest.TestCase):
 
     def test_sanitize_part_removes_unsafe_path_chars(self) -> None:
         self.assertEqual("a_b_c", sanitize_part("../a/b c"))
+
+    def test_loads_cached_limit_window_snake_case(self) -> None:
+        snapshot = snapshot_from_json(
+            {
+                "fetched_at": 1778613100,
+                "primary": {
+                    "resets_at": 1778628172,
+                    "used_percent": 46.0,
+                    "window_duration_mins": 300,
+                },
+                "secondary": None,
+                "plan_type": "plus",
+                "reached_type": None,
+                "error": None,
+            }
+        )
+
+        self.assertIsNotNone(snapshot)
+        assert snapshot is not None
+        self.assertEqual(LimitWindow(46.0, 300, 1778628172), snapshot.primary)
 
 
 def _config(root: Path) -> Config:
