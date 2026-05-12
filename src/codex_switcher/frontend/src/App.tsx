@@ -1,21 +1,34 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactElement } from 'react'
 import './App.css'
 
 type LimitWindow = {
   remaining: number | null
   reset: string
+  error?: string
 }
 
 type Session = {
   id: string
+  key: string
   account: string
   category: string
+  displayCategory?: string
   fingerprint: string
   active: boolean
   capturedAt: string
   fiveHour: LimitWindow | null
   weekly: LimitWindow | null
+}
+
+type BackendState = {
+  sessions: Session[]
+  activeAuthExists: boolean
+  paths: {
+    auth: string
+    sessions: string
+    cache: string
+  }
 }
 
 type Activity = {
@@ -38,11 +51,17 @@ type IconName =
   | 'switch'
   | 'trash'
 
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ??
+  (window.location.port === '5173' ? 'http://127.0.0.1:8765' : '')
+
 const initialSessions: Session[] = [
   {
-    id: 'work-a',
+    id: 'work/account-a@example.com',
+    key: 'work/account-a@example.com',
     account: 'account-a@example.com',
     category: 'work',
+    displayCategory: 'work',
     fingerprint: '4f6a...91c2',
     active: true,
     capturedAt: 'May 13 00:12',
@@ -50,9 +69,11 @@ const initialSessions: Session[] = [
     weekly: { remaining: 54, reset: 'Mon 09:00' },
   },
   {
-    id: 'personal-b',
+    id: 'personal/account-b@example.com',
+    key: 'personal/account-b@example.com',
     account: 'account-b@example.com',
     category: 'personal',
+    displayCategory: 'personal',
     fingerprint: '9bb2...a814',
     active: false,
     capturedAt: 'May 13 00:19',
@@ -60,9 +81,11 @@ const initialSessions: Session[] = [
     weekly: { remaining: 88, reset: 'Sun 18:00' },
   },
   {
-    id: 'test-c',
+    id: 'tests/account-c@example.com',
+    key: 'tests/account-c@example.com',
     account: 'account-c@example.com',
     category: 'tests',
+    displayCategory: 'tests',
     fingerprint: 'c102...70de',
     active: false,
     capturedAt: 'May 13 00:27',
@@ -75,40 +98,18 @@ const initialActivity: Activity[] = [
   {
     id: 3,
     tone: 'success',
-    title: 'Captured account-c@example.com',
-    detail: 'Saved auth.json into tests/account-c@example.com.json.',
+    title: 'Frontend ready',
+    detail: 'Start the backend to control real Codex auth files from this UI.',
   },
   {
     id: 2,
     tone: 'neutral',
-    title: 'Prepared clean login',
-    detail: 'Codex.app closed and the active auth.json was removed locally.',
-  },
-  {
-    id: 1,
-    tone: 'success',
-    title: 'Switched to account-a@example.com',
-    detail: 'Selected auth.json copied into ~/.codex/auth.json.',
+    title: 'Backend endpoint',
+    detail: API_BASE || 'Using same-origin /api endpoints.',
   },
 ]
 
 const categoryLabel = (value: string) => value || 'default'
-
-const makeFingerprint = (seed: string) => {
-  let hash = 0
-  for (const char of seed) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  }
-  return `${hash.toString(16).slice(0, 4)}...${(hash ^ 0xabcd).toString(16).slice(0, 4)}`
-}
-
-const formatCapturedAt = () =>
-  new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date())
 
 function App() {
   const [sessions, setSessions] = useState(initialSessions)
@@ -118,6 +119,36 @@ function App() {
   const [captureOpen, setCaptureOpen] = useState(false)
   const [captureName, setCaptureName] = useState('')
   const [captureCategory, setCaptureCategory] = useState('')
+  const [backendState, setBackendState] = useState<BackendState | null>(null)
+  const [backendOnline, setBackendOnline] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const pushActivity = useCallback((entry: Omit<Activity, 'id'>) => {
+    setActivity((current) => [{ ...entry, id: Date.now() }, ...current].slice(0, 7))
+  }, [])
+
+  const loadState = useCallback(async () => {
+    try {
+      const state = await request<BackendState>('/api/state')
+      setBackendState(state)
+      setSessions(state.sessions.map(normalizeSession))
+      setBackendOnline(true)
+    } catch (error) {
+      setBackendOnline(false)
+      pushActivity({
+        tone: 'warning',
+        title: 'Backend unavailable',
+        detail: errorMessage(error),
+      })
+    }
+  }, [pushActivity])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadState()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadState])
 
   const activeSession = sessions.find((session) => session.active) ?? null
   const categories = useMemo(
@@ -144,44 +175,122 @@ function App() {
     return { captured, loadedLimits, staleLimits }
   }, [sessions])
 
-  const pushActivity = (entry: Omit<Activity, 'id'>) => {
-    setActivity((current) => [{ ...entry, id: Date.now() }, ...current].slice(0, 7))
+  const runAction = async (
+    title: string,
+    action: () => Promise<{ message?: string }>,
+    fallback?: () => void,
+    tone: Activity['tone'] = 'success',
+  ) => {
+    if (!backendOnline) {
+      fallback?.()
+      pushActivity({
+        tone: 'warning',
+        title: `${title} simulated`,
+        detail: 'Backend is offline, so only the visible demo state changed.',
+      })
+      return
+    }
+
+    setBusy(title)
+    try {
+      const result = await action()
+      await loadState()
+      pushActivity({
+        tone,
+        title,
+        detail: result.message || 'Backend operation completed.',
+      })
+    } catch (error) {
+      pushActivity({
+        tone: 'warning',
+        title: `${title} failed`,
+        detail: errorMessage(error),
+      })
+    } finally {
+      setBusy(null)
+    }
   }
 
   const switchToSession = (id: string) => {
     const target = sessions.find((session) => session.id === id)
     if (!target) return
-
-    setSessions((current) =>
-      current.map((session) => ({ ...session, active: session.id === id })),
+    void runAction(
+      `Switched to ${target.account}`,
+      () => request('/api/sessions/switch', { method: 'POST', body: { key: target.key } }),
+      () => setSessions((current) => current.map((session) => ({ ...session, active: session.id === id }))),
     )
-    pushActivity({
-      tone: 'success',
-      title: `Switched to ${target.account}`,
-      detail: 'Codex.app would close, active auth.json would be replaced, then Codex can be reopened.',
-    })
   }
 
   const prepareLogin = () => {
-    setSessions((current) => current.map((session) => ({ ...session, active: false })))
-    pushActivity({
-      tone: 'warning',
-      title: 'Prepared clean login',
-      detail: 'Active auth.json removed locally. Sign in to the next account, then capture current.',
-    })
+    void runAction(
+      'Prepared clean login',
+      () => request('/api/auth/prepare-login', { method: 'POST' }),
+      () => setSessions((current) => current.map((session) => ({ ...session, active: false }))),
+      'warning',
+    )
   }
 
   const removeActiveAuth = () => {
     if (!activeSession) return
-    setSessions((current) => current.map((session) => ({ ...session, active: false })))
-    pushActivity({
-      tone: 'warning',
-      title: `Removed active auth for ${activeSession.account}`,
-      detail: 'Saved session remains in the list; only the active local auth file is cleared.',
-    })
+    void runAction(
+      `Removed active auth for ${activeSession.account}`,
+      () => request('/api/auth/remove-active', { method: 'POST' }),
+      () => setSessions((current) => current.map((session) => ({ ...session, active: false }))),
+      'warning',
+    )
   }
 
   const refreshSession = (id: string) => {
+    const target = sessions.find((session) => session.id === id)
+    if (!target) return
+    void runAction(
+      `Refreshed limits for ${target.account}`,
+      () => request('/api/sessions/refresh', { method: 'POST', body: { key: target.key } }),
+      () => refreshDemoSession(id),
+      'neutral',
+    )
+  }
+
+  const refreshAll = () => {
+    void runAction(
+      'Queued slow refresh for all accounts',
+      () => request('/api/sessions/refresh-all', { method: 'POST' }),
+      () => sessions.forEach((session) => refreshDemoSession(session.id)),
+      'neutral',
+    )
+  }
+
+  const forgetSession = (id: string) => {
+    const target = sessions.find((session) => session.id === id)
+    if (!target) return
+    void runAction(
+      `Removed saved session ${target.account}`,
+      () => request(`/api/sessions/${encodeURIComponent(target.key)}`, { method: 'DELETE' }),
+      () => setSessions((current) => current.filter((session) => session.id !== id)),
+      'warning',
+    )
+  }
+
+  const captureCurrent = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const account = captureName.trim()
+    if (!account) return
+
+    void runAction(
+      `Captured ${account}`,
+      () =>
+        request('/api/sessions/capture', {
+          method: 'POST',
+          body: { email: account, category: captureCategory.trim() },
+        }),
+      () => captureDemoSession(account, captureCategory.trim()),
+    )
+    setCaptureName('')
+    setCaptureCategory('')
+    setCaptureOpen(false)
+  }
+
+  const refreshDemoSession = (id: string) => {
     setSessions((current) =>
       current.map((session, index) => {
         if (session.id !== id) return session
@@ -193,47 +302,17 @@ function App() {
         }
       }),
     )
-    const target = sessions.find((session) => session.id === id)
-    pushActivity({
-      tone: 'neutral',
-      title: target ? `Refreshed limits for ${target.account}` : 'Refreshed limits',
-      detail: 'Limit data updated for the selected saved auth file.',
-    })
   }
 
-  const refreshAll = () => {
-    sessions.forEach((session) => refreshSession(session.id))
-    pushActivity({
-      tone: 'neutral',
-      title: 'Queued slow refresh for all accounts',
-      detail: 'Accounts are refreshed one at a time to avoid noisy app-server requests.',
-    })
-  }
-
-  const forgetSession = (id: string) => {
-    const target = sessions.find((session) => session.id === id)
-    setSessions((current) => current.filter((session) => session.id !== id))
-    if (target) {
-      pushActivity({
-        tone: 'warning',
-        title: `Removed saved session ${target.account}`,
-        detail: 'This removes the saved row in the UI. A real backend should confirm before deleting the file.',
-      })
-    }
-  }
-
-  const captureCurrent = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const account = captureName.trim()
-    if (!account) return
-
-    const cleanCategory = captureCategory.trim()
-    const id = `${cleanCategory || 'default'}-${account}-${Date.now()}`
+  const captureDemoSession = (account: string, cleanCategory: string) => {
+    const key = `${cleanCategory || 'default'}/${account}`
     const session: Session = {
-      id,
+      id: key,
+      key,
       account,
       category: cleanCategory,
-      fingerprint: makeFingerprint(id),
+      displayCategory: categoryLabel(cleanCategory),
+      fingerprint: makeFingerprint(key),
       active: true,
       capturedAt: formatCapturedAt(),
       fiveHour: null,
@@ -244,14 +323,6 @@ function App() {
       session,
       ...current.map((item) => ({ ...item, active: false })),
     ])
-    pushActivity({
-      tone: 'success',
-      title: `Captured ${account}`,
-      detail: `Saved current auth.json as ${categoryLabel(cleanCategory)}/${account}.json.`,
-    })
-    setCaptureName('')
-    setCaptureCategory('')
-    setCaptureOpen(false)
   }
 
   return (
@@ -299,16 +370,25 @@ function App() {
             <p>Switch, capture, and refresh saved Codex.app sessions from one place.</p>
           </div>
           <div className="topbar-actions">
-            <button className="button ghost" type="button" onClick={prepareLogin}>
+            <button className="button ghost" type="button" onClick={() => void loadState()} disabled={busy !== null}>
+              <Icon name="refresh" />
+              Reload
+            </button>
+            <button className="button ghost" type="button" onClick={prepareLogin} disabled={busy !== null}>
               <Icon name="plus" />
               Prepare login
             </button>
-            <button className="button primary" type="button" onClick={() => setCaptureOpen(true)}>
+            <button className="button primary" type="button" onClick={() => setCaptureOpen(true)} disabled={busy !== null}>
               <Icon name="capture" />
               Capture current
             </button>
           </div>
         </header>
+
+        <div className={backendOnline ? 'backend-status online' : 'backend-status offline'}>
+          <span>{backendOnline ? 'Backend connected' : 'Demo mode'}</span>
+          <strong>{backendOnline ? backendState?.paths.sessions : 'Run codex-switcher-backend for real auth operations.'}</strong>
+        </div>
 
         <section className="status-strip" aria-label="Session summary">
           <Metric label="Captured" value={String(stats.captured)} />
@@ -337,26 +417,28 @@ function App() {
               title="Switch saved session"
               detail="Copy selected auth.json into place."
               onClick={() => filteredSessions[0] && switchToSession(filteredSessions[0].id)}
-              disabled={filteredSessions.length === 0}
+              disabled={filteredSessions.length === 0 || busy !== null}
             />
             <CommandButton
               icon="plus"
               title="Prepare clean login"
               detail="Close Codex and clear active auth locally."
               onClick={prepareLogin}
+              disabled={busy !== null}
             />
             <CommandButton
               icon="capture"
               title="Capture current"
               detail="Save the new login as a named session."
               onClick={() => setCaptureOpen(true)}
+              disabled={busy !== null}
             />
             <CommandButton
               icon="trash"
               title="Remove active auth"
               detail="Clear active auth without deleting saved sessions."
               onClick={removeActiveAuth}
-              disabled={!activeSession}
+              disabled={!activeSession || busy !== null}
             />
           </div>
         </section>
@@ -413,9 +495,9 @@ function App() {
                 <LimitCell window={session.fiveHour} />
                 <LimitCell window={session.weekly} />
                 <div className="row-actions" role="cell">
-                  <IconButton label="Switch" icon="switch" onClick={() => switchToSession(session.id)} />
-                  <IconButton label="Refresh" icon="refresh" onClick={() => refreshSession(session.id)} />
-                  <IconButton label="Forget" icon="trash" onClick={() => forgetSession(session.id)} />
+                  <IconButton label="Switch" icon="switch" onClick={() => switchToSession(session.id)} disabled={busy !== null} />
+                  <IconButton label="Refresh" icon="refresh" onClick={() => refreshSession(session.id)} disabled={busy !== null} />
+                  <IconButton label="Forget" icon="trash" onClick={() => forgetSession(session.id)} disabled={busy !== null} />
                 </div>
               </div>
             ))}
@@ -429,7 +511,7 @@ function App() {
                 <span className="section-label">Rate limits</span>
                 <h2>Slow refresh queue</h2>
               </div>
-              <button className="button ghost" type="button" onClick={refreshAll}>
+              <button className="button ghost" type="button" onClick={refreshAll} disabled={busy !== null}>
                 <Icon name="refresh" />
                 Refresh all
               </button>
@@ -440,7 +522,7 @@ function App() {
                   <span>{index + 1}</span>
                   <div>
                     <strong>{session.account}</strong>
-                    <p>{session.fiveHour ? `${session.fiveHour.remaining}% 5h remaining` : 'Limits not loaded'}</p>
+                    <p>{session.fiveHour ? `${session.fiveHour.remaining ?? '?'}% 5h remaining` : 'Limits not loaded'}</p>
                   </div>
                 </li>
               ))}
@@ -478,7 +560,7 @@ function App() {
                 <h2>Capture current auth.json</h2>
               </div>
               <button className="icon-button" type="button" aria-label="Close" onClick={() => setCaptureOpen(false)}>
-                ×
+                x
               </button>
             </div>
             <label>
@@ -502,7 +584,7 @@ function App() {
               <button className="button ghost" type="button" onClick={() => setCaptureOpen(false)}>
                 Cancel
               </button>
-              <button className="button primary" type="submit" disabled={!captureName.trim()}>
+              <button className="button primary" type="submit" disabled={!captureName.trim() || busy !== null}>
                 <Icon name="check" />
                 Save session
               </button>
@@ -512,6 +594,57 @@ function App() {
       )}
     </main>
   )
+}
+
+async function request<T = { message?: string }>(
+  path: string,
+  options: { method?: string; body?: Record<string, unknown> } = {},
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: options.method ?? 'GET',
+    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  })
+  const payload = await response.json()
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || payload.message || `HTTP ${response.status}`)
+  }
+  return payload as T
+}
+
+function normalizeSession(session: Session): Session {
+  return {
+    ...session,
+    id: session.key || session.id,
+    key: session.key || session.id,
+    account: session.account || session.key,
+    category: session.category || '',
+    displayCategory: session.displayCategory || categoryLabel(session.category || ''),
+    capturedAt: session.capturedAt || '',
+    fiveHour: session.fiveHour,
+    weekly: session.weekly,
+  }
+}
+
+function makeFingerprint(seed: string) {
+  let hash = 0
+  for (const char of seed) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return `${hash.toString(16).slice(0, 4)}...${(hash ^ 0xabcd).toString(16).slice(0, 4)}`
+}
+
+function formatCapturedAt() {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date())
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -554,25 +687,35 @@ function LimitCell({ window }: { window: LimitWindow | null }) {
     )
   }
 
+  if (window.error) {
+    return (
+      <span className="limit-cell empty" role="cell">
+        error
+      </span>
+    )
+  }
+
   return (
     <span className="limit-cell" role="cell">
-      <strong>{window.remaining}% left</strong>
+      <strong>{window.remaining ?? '?'}% left</strong>
       <small>resets {window.reset}</small>
     </span>
   )
 }
 
 function IconButton({
+  disabled,
   icon,
   label,
   onClick,
 }: {
+  disabled?: boolean
   icon: IconName
   label: string
   onClick: () => void
 }) {
   return (
-    <button className="icon-button" type="button" aria-label={label} title={label} onClick={onClick}>
+    <button className="icon-button" type="button" aria-label={label} title={label} onClick={onClick} disabled={disabled}>
       <Icon name={icon} />
     </button>
   )

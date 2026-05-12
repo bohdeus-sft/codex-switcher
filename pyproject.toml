@@ -10,7 +10,8 @@ dependencies = [
 ]
 
 [project.scripts]
-codex-switcher = "codex_switcher.main:main"
+codex-switcher = "codex_switcher.cli.main:main"
+codex-switcher-backend = "codex_switcher.backend.server:main"
 
 [build-system]
 requires = ["uv_build>=0.9.17,<0.10.0"]

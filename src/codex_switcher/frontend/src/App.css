@@ -214,6 +214,38 @@ select {
   background: var(--line);
 }
 
+.backend-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.backend-status span {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.backend-status strong {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.backend-status.online span {
+  color: #0f766e;
+}
+
+.backend-status.offline span {
+  color: #9a5b00;
+}
+
 .metric,
 .active-account {
   min-height: 76px;
@@ -461,6 +493,13 @@ select:focus {
   cursor: pointer;
 }
 
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+  box-shadow: none;
+}
+
 .bottom-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
@@ -637,6 +676,11 @@ select:focus {
   .status-strip,
   .command-grid {
     grid-template-columns: 1fr;
+  }
+
+  .backend-status {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .table-head {
