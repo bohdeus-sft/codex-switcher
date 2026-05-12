@@ -143,15 +143,8 @@ class CodexSwitcherTui:
             self._pause()
             return
         delay = IntPrompt.ask("Delay between accounts, seconds", default=self.config.refresh_delay_seconds)
-        codex_is_running = self.codex_app.is_running()
         for index, session in enumerate(sessions, start=1):
-            if codex_is_running and session.active:
-                self.console.print(
-                    "[yellow]Skipped active account because Codex.app is running.[/yellow] "
-                    "[dim]Close Codex.app or refresh this account manually.[/dim]"
-                )
-            else:
-                self._refresh_one(session, preserve_cache_on_error=True)
+            self._refresh_one(session, preserve_cache_on_error=True)
             if index < len(sessions):
                 self.console.print(f"[dim]Waiting {delay}s before next account...[/dim]")
                 time.sleep(max(0, delay))
