@@ -116,7 +116,7 @@ def _initialize_params() -> dict[str, Any]:
         "clientInfo": {
             "name": "codex_switcher",
             "title": "Codex Switcher",
-            "version": "0.1.0",
+            "version": "0.1.1",
         },
         "capabilities": {
             "optOutNotificationMethods": [

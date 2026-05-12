@@ -22,9 +22,11 @@ uv run codex-switcher
 From this repo:
 
 ```bash
-uv tool install .
+uv tool install --reinstall .
 codex-switcher
 ```
+
+Use `--reinstall` after pulling or changing local code. Plain `uv tool install .` keeps the already installed tool.
 
 For development:
 
