@@ -1,5 +1,4 @@
-def main() -> None:
-    return
+from codex_switcher.main import main
 
 if __name__ == "__main__":
     try:
