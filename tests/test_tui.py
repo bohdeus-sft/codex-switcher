@@ -7,7 +7,7 @@ from unittest.mock import patch
 from rich.console import Console
 
 from codex_switcher.models import Session
-from codex_switcher.tui import CodexSwitcherTui
+from codex_switcher.cli.tui import CodexSwitcherTui
 
 
 class CodexSwitcherTuiTest(unittest.TestCase):
@@ -23,7 +23,7 @@ class CodexSwitcherTuiTest(unittest.TestCase):
         tui._refresh_one = lambda session, preserve_cache_on_error=False: refreshed.append(session.email)
         tui._pause = lambda: None
 
-        with patch("codex_switcher.tui.IntPrompt.ask", return_value=0), patch("codex_switcher.tui.time.sleep"):
+        with patch("codex_switcher.cli.tui.IntPrompt.ask", return_value=0), patch("codex_switcher.cli.tui.time.sleep"):
             tui._refresh_all_slowly(sessions)
 
         self.assertEqual(["inactive@example.com", "active@example.com"], refreshed)
