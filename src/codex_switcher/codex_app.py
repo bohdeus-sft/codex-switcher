@@ -14,8 +14,29 @@ class CodexApp:
     def __init__(self, config: Config) -> None:
         self.config = config
 
+    def is_running(self) -> bool:
+        if sys.platform != "darwin":
+            return False
+        result = subprocess.run(
+            ["pgrep", "-x", "Codex"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.returncode == 0
+
+    def wait_until_stopped(self, timeout: float = 10.0, poll_interval: float = 0.2) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.is_running():
+                return True
+            time.sleep(poll_interval)
+        return not self.is_running()
+
     def stop(self) -> None:
         if sys.platform != "darwin":
+            return
+        if not self.is_running():
             return
 
         subprocess.run(
@@ -24,13 +45,16 @@ class CodexApp:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        time.sleep(1.5)
+        if self.wait_until_stopped(timeout=8.0):
+            return
+
         subprocess.run(
             ["pkill", "-x", "Codex"],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        self.wait_until_stopped(timeout=3.0)
 
     def open(self) -> None:
         if sys.platform == "darwin":

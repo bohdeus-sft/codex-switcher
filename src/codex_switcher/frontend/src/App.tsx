@@ -222,6 +222,13 @@ function App() {
   }, [loadState])
 
   const activeSession = sessions.find((session) => session.active) ?? null
+  const captureCategories = useMemo(
+    () =>
+      Array.from(
+        new Set(sessions.map((session) => session.category.trim()).filter((value) => value.length > 0)),
+      ).sort(),
+    [sessions],
+  )
   const categories = useMemo(
     () => ['all', ...Array.from(new Set(sessions.map((session) => categoryLabel(session.category))))],
     [sessions],
@@ -517,10 +524,6 @@ function App() {
           <Metric label="Captured" value={String(stats.captured)} />
           <Metric label="Limits loaded" value={String(stats.loadedLimits)} />
           <Metric label="Need refresh" value={String(stats.staleLimits)} />
-          <div className="active-account">
-            <span>Active auth</span>
-            <strong>{activeSession ? activeSession.account : 'None'}</strong>
-          </div>
         </section>
 
         <section className="command-center" id="capture">
@@ -726,10 +729,20 @@ function App() {
             <label>
               <span>Category folder</span>
               <input
+                list="capture-category-options"
                 value={captureCategory}
                 onChange={(event) => setCaptureCategory(event.target.value)}
-                placeholder="work, personal, tests"
+                placeholder={
+                  captureCategories.length > 0
+                    ? `${captureCategories.slice(0, 3).join(', ')} — or type a new one`
+                    : 'work, personal, tests'
+                }
               />
+              <datalist id="capture-category-options">
+                {captureCategories.map((value) => (
+                  <option key={value} value={value} />
+                ))}
+              </datalist>
             </label>
             <div className="modal-actions">
               <button className="button ghost" type="button" onClick={() => setCaptureOpen(false)}>
