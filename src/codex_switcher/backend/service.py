@@ -5,11 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..codex_app import CodexApp
-from ..config import Config
-from ..limits import LimitReader
-from ..models import LimitSnapshot, LimitWindow, Session
-from ..storage import SessionStore
+from codex_switcher.codex_app import CodexApp
+from codex_switcher.config import Config
+from codex_switcher.limits import LimitReader
+from codex_switcher.models import LimitSnapshot, LimitWindow, Session
+from codex_switcher.storage import SessionStore
 
 
 class SwitcherService:

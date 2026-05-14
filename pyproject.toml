@@ -5,8 +5,11 @@ description = "Rich TUI for switching Codex.app ChatGPT sessions"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.136.1",
+    "httpx>=0.28.1",
     "pydantic-settings>=2.14.1",
     "rich>=15.0.0",
+    "uvicorn>=0.46.0",
 ]
 
 [project.scripts]

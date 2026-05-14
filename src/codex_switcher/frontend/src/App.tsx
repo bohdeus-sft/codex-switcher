@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactElement } from 'react'
 import './App.css'
+import { resolveApiBase } from './apiBase'
 
 type LimitWindow = {
   remaining: number | null
@@ -51,9 +52,7 @@ type IconName =
   | 'switch'
   | 'trash'
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ??
-  (window.location.port === '5173' ? 'http://127.0.0.1:8765' : '')
+const API_BASE = resolveApiBase(window.location, import.meta.env.VITE_API_BASE_URL)
 
 const initialSessions: Session[] = [
   {

@@ -14,7 +14,7 @@ Local tools for switching Codex.app ChatGPT sessions on macOS.
 ## Layout
 
 - `src/codex_switcher/cli` contains the terminal TUI.
-- `src/codex_switcher/backend` contains the local JSON backend used by the web UI.
+- `src/codex_switcher/backend` contains the local FastAPI JSON backend used by the web UI.
 - `src/codex_switcher/frontend` contains the Vite React frontend.
 - Shared auth/session/limit logic remains in `src/codex_switcher`.
 
@@ -41,6 +41,17 @@ Start the backend:
 PYTHONPATH=src python -m codex_switcher.backend.server
 ```
 
+The backend listens on `http://127.0.0.1:8765` and exposes:
+
+- `GET /api/state`
+- `POST /api/auth/prepare-login`
+- `POST /api/auth/remove-active`
+- `POST /api/sessions/capture`
+- `POST /api/sessions/switch`
+- `POST /api/sessions/refresh`
+- `POST /api/sessions/refresh-all`
+- `DELETE /api/sessions/{key}`
+
 Then start the frontend in another terminal:
 
 ```bash
@@ -49,7 +60,7 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173/`. The frontend calls the backend at `http://127.0.0.1:8765` in dev mode.
+Open the local Vite URL, usually `http://127.0.0.1:5173/`. If Vite selects another local port, the frontend still calls the backend at `http://127.0.0.1:8765` in dev mode.
 
 To serve a built frontend from the backend:
 

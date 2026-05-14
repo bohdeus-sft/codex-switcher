@@ -17,6 +17,6 @@ npm install
 npm run dev
 ```
 
-The dev app runs at `http://127.0.0.1:5173/` and calls `http://127.0.0.1:8765/api`.
+The dev app usually runs at `http://127.0.0.1:5173/`; if that port is busy, Vite may choose another local port. Local dev pages call `http://127.0.0.1:8765/api`.
 
 Set `VITE_API_BASE_URL` to override the backend URL.
