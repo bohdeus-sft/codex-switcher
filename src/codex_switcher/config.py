@@ -17,7 +17,7 @@ class Config:
     @classmethod
     def load(cls) -> "Config":
         codex_home = Path.home() / ".codex"
-        switcher_home = codex_home / "codex-switcher"
+        switcher_home = Path.home() / "Documents" / "codex-switcher"
         return cls(
             codex_home=codex_home,
             switcher_home=switcher_home,

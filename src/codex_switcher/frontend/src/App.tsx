@@ -6,6 +6,7 @@ import { resolveApiBase } from './apiBase'
 type LimitWindow = {
   remaining: number | null
   reset: string
+  resetsAt?: number | null
   error?: string
 }
 
@@ -172,13 +173,20 @@ const initialActivity: Activity[] = [
 
 const categoryLabel = (value: string) => value || 'default'
 
+function splitAccount(account: string): { friendly: string | null; codex: string } {
+  const idx = account.indexOf('+')
+  if (idx === -1) return { friendly: null, codex: account }
+  return { friendly: account.slice(0, idx), codex: account.slice(idx + 1) }
+}
+
 function App() {
   const [sessions, setSessions] = useState(initialSessions)
   const [activity, setActivity] = useState(initialActivity)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [captureOpen, setCaptureOpen] = useState(false)
-  const [captureName, setCaptureName] = useState('')
+  const [captureFriendly, setCaptureFriendly] = useState('')
+  const [captureCodex, setCaptureCodex] = useState('')
   const [captureCategory, setCaptureCategory] = useState('')
   const [backendState, setBackendState] = useState<BackendState | null>(null)
   const [backendOnline, setBackendOnline] = useState(false)
@@ -297,13 +305,25 @@ function App() {
     )
   }
 
-  const removeActiveAuth = () => {
-    if (!activeSession) return
+  const openPathInFinder = (key: 'auth' | 'sessions') => {
     void runAction(
-      `Removed active auth for ${activeSession.account}`,
-      () => requestWithLog('/api/auth/remove-active', { method: 'POST' }),
+      key === 'auth' ? 'Revealed active auth.json in Finder' : 'Opened sessions folder in Finder',
+      () => requestWithLog('/api/paths/open', { method: 'POST', body: { key } }),
+      undefined,
+      'neutral',
+    )
+  }
+
+  const triggerCodexLogin = () => {
+    void runAction(
+      'Triggered Codex login',
+      () =>
+        requestWithLog('/api/auth/prepare-login', {
+          method: 'POST',
+          body: { openCodex: true },
+        }),
       () => setSessions((current) => current.map((session) => ({ ...session, active: false }))),
-      'warning',
+      'neutral',
     )
   }
 
@@ -340,19 +360,28 @@ function App() {
 
   const captureCurrent = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const account = captureName.trim()
-    if (!account) return
+    const friendly = captureFriendly.trim()
+    const codex = captureCodex.trim()
+    if (!friendly || !codex) return
+
+    const account = `${friendly}+${codex}`
 
     void runAction(
       `Captured ${account}`,
       () =>
         requestWithLog('/api/sessions/capture', {
           method: 'POST',
-          body: { email: account, category: captureCategory.trim() },
+          body: {
+            email: account,
+            category: captureCategory.trim(),
+            friendlyShareEmail: friendly,
+            codexEmail: codex,
+          },
         }),
       () => captureDemoSession(account, captureCategory.trim()),
     )
-    setCaptureName('')
+    setCaptureFriendly('')
+    setCaptureCodex('')
     setCaptureCategory('')
     setCaptureOpen(false)
   }
@@ -441,14 +470,6 @@ function App() {
               <Icon name="refresh" />
               Reload
             </button>
-            <button className="button ghost" type="button" onClick={prepareLogin} disabled={busy !== null}>
-              <Icon name="plus" />
-              Prepare login
-            </button>
-            <button className="button primary" type="button" onClick={() => setCaptureOpen(true)} disabled={busy !== null}>
-              <Icon name="capture" />
-              Capture current
-            </button>
           </div>
         </header>
 
@@ -456,6 +477,41 @@ function App() {
           <span>{backendOnline ? 'Backend connected' : 'Demo mode'}</span>
           <strong>{backendOnline ? backendState?.paths.sessions : 'Run codex-switcher-backend for real auth operations.'}</strong>
         </div>
+
+        {backendOnline && backendState && (
+          <section className="paths-panel" aria-label="On-disk paths">
+            <div className="path-row">
+              <div>
+                <span className="section-label">Active auth.json</span>
+                <code>{backendState.paths.auth}</code>
+              </div>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => openPathInFinder('auth')}
+                disabled={busy !== null}
+              >
+                <Icon name="folder" />
+                Reveal in Finder
+              </button>
+            </div>
+            <div className="path-row">
+              <div>
+                <span className="section-label">Saved sessions folder</span>
+                <code>{backendState.paths.sessions}</code>
+              </div>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => openPathInFinder('sessions')}
+                disabled={busy !== null}
+              >
+                <Icon name="folder" />
+                Open in Finder
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className="status-strip" aria-label="Session summary">
           <Metric label="Captured" value={String(stats.captured)} />
@@ -469,13 +525,30 @@ function App() {
 
         <section className="command-center" id="capture">
           <div className="current-session">
-            <span className="section-label">Current account</span>
-            <h2>{activeSession ? activeSession.account : 'No active auth.json'}</h2>
-            <p>
-              {activeSession
-                ? `Loaded from ${categoryLabel(activeSession.category)} with fingerprint ${activeSession.fingerprint}.`
-                : 'Prepare login or switch to a saved session to populate ~/.codex/auth.json.'}
-            </p>
+            {activeSession ? (
+              (() => {
+                const { friendly, codex } = splitAccount(activeSession.account)
+                return friendly ? (
+                  <div className="account-fields">
+                    <div className="account-field">
+                      <span className="account-field-label">Friendly Share</span>
+                      <h2>{friendly}</h2>
+                    </div>
+                    <div className="account-field">
+                      <span className="account-field-label">Codex</span>
+                      <h2>{codex}</h2>
+                    </div>
+                  </div>
+                ) : (
+                  <h2>{codex}</h2>
+                )
+              })()
+            ) : (
+              <h2>No active auth.json</h2>
+            )}
+            {!activeSession && (
+              <p>Prepare login or switch to a saved session to populate ~/.codex/auth.json.</p>
+            )}
           </div>
 
           <div className="command-grid">
@@ -487,25 +560,25 @@ function App() {
               disabled={filteredSessions.length === 0 || busy !== null}
             />
             <CommandButton
-              icon="plus"
+              icon="trash"
               title="Prepare clean login"
               detail="Close Codex and clear active auth locally."
               onClick={prepareLogin}
               disabled={busy !== null}
             />
             <CommandButton
-              icon="capture"
-              title="Capture current"
-              detail="Save the new login as a named session."
-              onClick={() => setCaptureOpen(true)}
+              icon="plus"
+              title="Codex login"
+              detail="Clear active auth and open Codex.app to sign in."
+              onClick={triggerCodexLogin}
               disabled={busy !== null}
             />
             <CommandButton
-              icon="trash"
-              title="Remove active auth"
-              detail="Clear active auth without deleting saved sessions."
-              onClick={removeActiveAuth}
-              disabled={!activeSession || busy !== null}
+              icon="capture"
+              title="Capture current"
+              detail="Save the current active auth.json as a named session."
+              onClick={() => setCaptureOpen(true)}
+              disabled={busy !== null}
             />
           </div>
         </section>
@@ -549,10 +622,10 @@ function App() {
             {filteredSessions.map((session) => (
               <div className="table-row" role="row" key={session.id}>
                 <div className="account-cell" role="cell">
-                  <strong>{session.account}</strong>
-                  <span>
+                  <strong><AccountName account={session.account} /></strong>
+                  <span className="account-meta">
                     {session.active && <b>active</b>}
-                    {session.fingerprint} captured {session.capturedAt}
+                    <span className="account-captured">captured {session.capturedAt}</span>
                   </span>
                 </div>
                 <span className="category-pill" role="cell">
@@ -588,7 +661,7 @@ function App() {
                 <li key={session.id}>
                   <span>{index + 1}</span>
                   <div>
-                    <strong>{session.account}</strong>
+                    <strong><AccountName account={session.account} /></strong>
                     <p>{session.fiveHour ? `${session.fiveHour.remaining ?? '?'}% 5h remaining` : 'Limits not loaded'}</p>
                   </div>
                 </li>
@@ -632,12 +705,22 @@ function App() {
               </button>
             </div>
             <label>
-              <span>Email or session name</span>
+              <span>Friendly Share email</span>
               <input
                 autoFocus
-                value={captureName}
-                onChange={(event) => setCaptureName(event.target.value)}
-                placeholder="account@example.com"
+                type="email"
+                value={captureFriendly}
+                onChange={(event) => setCaptureFriendly(event.target.value)}
+                placeholder="friendlyshare05@gmail.com"
+              />
+            </label>
+            <label>
+              <span>Codex email</span>
+              <input
+                type="email"
+                value={captureCodex}
+                onChange={(event) => setCaptureCodex(event.target.value)}
+                placeholder="codex-account@example.com"
               />
             </label>
             <label>
@@ -652,7 +735,11 @@ function App() {
               <button className="button ghost" type="button" onClick={() => setCaptureOpen(false)}>
                 Cancel
               </button>
-              <button className="button primary" type="submit" disabled={!captureName.trim() || busy !== null}>
+              <button
+                className="button primary"
+                type="submit"
+                disabled={!captureFriendly.trim() || !captureCodex.trim() || busy !== null}
+              >
                 <Icon name="check" />
                 Save session
               </button>
@@ -937,6 +1024,28 @@ function CommandButton({
   )
 }
 
+function formatUntil(resetsAt: number): string {
+  const diff = resetsAt - Math.floor(Date.now() / 1000)
+  if (diff <= 0) return 'now'
+  const days = Math.floor(diff / 86400)
+  const hours = Math.floor((diff % 86400) / 3600)
+  const mins = Math.floor((diff % 3600) / 60)
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`
+  if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+  return mins > 0 ? `${mins}m` : '<1m'
+}
+
+function AccountName({ account }: { account: string }) {
+  const { friendly, codex } = splitAccount(account)
+  if (!friendly) return <>{codex}</>
+  return (
+    <span className="account-name">
+      <span className="account-name-friendly">{friendly}</span>
+      <span className="account-name-codex">{codex}</span>
+    </span>
+  )
+}
+
 function LimitCell({ window }: { window: LimitWindow | null }) {
   if (!window) {
     return (
@@ -958,6 +1067,9 @@ function LimitCell({ window }: { window: LimitWindow | null }) {
     <span className="limit-cell" role="cell">
       <strong>{window.remaining ?? '?'}% left</strong>
       <small>resets {window.reset}</small>
+      {typeof window.resetsAt === 'number' && window.resetsAt > 0 && (
+        <small>in {formatUntil(window.resetsAt)}</small>
+      )}
     </span>
   )
 }

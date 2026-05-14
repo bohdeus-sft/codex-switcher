@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -15,10 +19,30 @@ from codex_switcher.storage import SessionStore
 class SwitcherService:
     def __init__(self, config: Config | None = None) -> None:
         self.config = config or Config.load()
+        self._migrate_legacy_switcher_home()
         self.store = SessionStore(self.config)
         self.codex_app = CodexApp(self.config)
         self.limit_reader = LimitReader(self.config)
         self.snapshots = self.store.load_cache()
+
+    def _migrate_legacy_switcher_home(self) -> None:
+        legacy = self.config.codex_home / "codex-switcher"
+        target = self.config.switcher_home
+        if legacy == target or not legacy.exists():
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            for source in legacy.rglob("*"):
+                if source.is_dir():
+                    continue
+                relative = source.relative_to(legacy)
+                destination = target / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if not destination.exists():
+                    shutil.move(str(source), str(destination))
+            shutil.rmtree(legacy, ignore_errors=True)
+        else:
+            shutil.move(str(legacy), str(target))
 
     def state(self) -> dict[str, Any]:
         self.store.ensure()
@@ -37,12 +61,33 @@ class SwitcherService:
     def prepare_login(self, open_codex: bool = False) -> dict[str, Any]:
         self.codex_app.prepare_login()
         if open_codex:
+            time.sleep(2)
             self.codex_app.open()
         return self._ok("Prepared clean login. Active auth.json removed locally.")
 
     def open_codex(self) -> dict[str, Any]:
         self.codex_app.open()
         return self._ok("Codex.app open command sent.")
+
+    def open_path(self, key: str) -> dict[str, Any]:
+        targets = {
+            "auth": self.config.auth_path,
+            "sessions": self.config.sessions_dir,
+            "cache": self.config.cache_path,
+        }
+        if key not in targets:
+            raise ValueError(f"unknown path key: {key}")
+        path = targets[key]
+        if key == "sessions":
+            path.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            raise FileNotFoundError(f"path does not exist: {path}")
+        if sys.platform != "darwin":
+            return self._ok(f"Open is macOS-only; path is {path}.")
+        reveal = path.is_file()
+        cmd = ["open", "-R", str(path)] if reveal else ["open", str(path)]
+        subprocess.run(cmd, check=False)
+        return self._ok(f"Opened {path} in Finder.")
 
     def remove_active_auth(self) -> dict[str, Any]:
         self.codex_app.stop()

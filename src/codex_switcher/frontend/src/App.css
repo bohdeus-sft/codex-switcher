@@ -246,6 +246,35 @@ select {
   color: #9a5b00;
 }
 
+.paths-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-top: -4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfb;
+}
+
+.path-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.path-row > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.path-row code {
+  font-size: 12px;
+  color: var(--heading);
+  word-break: break-all;
+}
+
 .metric,
 .active-account {
   min-height: 76px;
@@ -308,6 +337,47 @@ select {
   color: var(--heading);
   font-size: 21px;
   line-height: 1.2;
+}
+
+.account-fields {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.account-field {
+  display: grid;
+  gap: 2px;
+}
+
+.account-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.account-field h2 {
+  margin: 0;
+  word-break: break-word;
+}
+
+.account-name {
+  display: grid;
+  gap: 1px;
+  word-break: break-word;
+}
+
+.account-name-friendly {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.account-name-codex {
+  font-weight: 700;
+  color: var(--heading);
 }
 
 .command-grid {
@@ -437,6 +507,21 @@ select:focus {
   border-radius: 999px;
   color: #0f766e;
   background: #ddf5f0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.account-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.account-captured {
+  color: var(--muted);
 }
 
 .category-pill,

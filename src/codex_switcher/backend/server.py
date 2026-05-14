@@ -30,6 +30,10 @@ class SessionKeyRequest(BaseModel):
     key: str
 
 
+class OpenPathRequest(BaseModel):
+    key: str
+
+
 def create_app(
     service: SwitcherService | None = None,
     static_root: Path | None = None,
@@ -78,6 +82,10 @@ def create_app(
     @app.post("/api/auth/remove-active")
     def remove_active_auth() -> dict[str, Any]:
         return _call(switcher.remove_active_auth)
+
+    @app.post("/api/paths/open")
+    def open_path(payload: OpenPathRequest) -> dict[str, Any]:
+        return _call(switcher.open_path, payload.key)
 
     @app.post("/api/sessions/capture")
     def capture_current(payload: CaptureSessionRequest) -> dict[str, Any]:

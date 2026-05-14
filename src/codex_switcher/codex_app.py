@@ -42,11 +42,15 @@ class CodexApp:
 
     def switch_to(self, session: Session) -> None:
         self.stop()
+        time.sleep(2)
         self.remove_active_auth()
         self._copy_auth(session.path, self.config.auth_path)
+        time.sleep(2)
+        self.open()
 
     def prepare_login(self) -> None:
         self.stop()
+        time.sleep(2)
         self.remove_active_auth()
 
     def save_current_auth(self, destination: Path) -> None:
