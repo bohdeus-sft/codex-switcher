@@ -55,6 +55,50 @@ const API_BASE =
   import.meta.env.VITE_API_BASE_URL ??
   (window.location.port === '5173' ? 'http://127.0.0.1:8765' : '')
 
+console.info('[codex-switcher] frontend booted', {
+  apiBase: API_BASE || '(same-origin)',
+  location: window.location.href,
+})
+
+class ApiError extends Error {
+  readonly method: string
+  readonly path: string
+  readonly status: number | null
+  readonly statusText: string
+  readonly requestBody?: unknown
+  readonly responseBody?: unknown
+  readonly durationMs: number
+  readonly cause?: unknown
+
+  constructor(init: {
+    method: string
+    path: string
+    status: number | null
+    statusText: string
+    requestBody?: unknown
+    responseBody?: unknown
+    durationMs: number
+    detail: string
+    cause?: unknown
+  }) {
+    const prefix = `${init.method} ${init.path}`
+    const message =
+      init.status === null
+        ? `${prefix} → network error: ${init.detail}`
+        : `${prefix} → ${init.status}: ${init.detail}`
+    super(message)
+    this.name = 'ApiError'
+    this.method = init.method
+    this.path = init.path
+    this.status = init.status
+    this.statusText = init.statusText
+    this.requestBody = init.requestBody
+    this.responseBody = init.responseBody
+    this.durationMs = init.durationMs
+    this.cause = init.cause
+  }
+}
+
 const initialSessions: Session[] = [
   {
     id: 'work/account-a@example.com',
@@ -135,10 +179,11 @@ function App() {
       setBackendOnline(true)
     } catch (error) {
       setBackendOnline(false)
+      console.error('[codex-switcher] state load failed', { error })
       pushActivity({
         tone: 'warning',
         title: 'Backend unavailable',
-        detail: errorMessage(error),
+        detail: formatErrorDetail(error),
       })
     }
   }, [pushActivity])
@@ -201,10 +246,11 @@ function App() {
         detail: result.message || 'Backend operation completed.',
       })
     } catch (error) {
+      console.error('[codex-switcher] action failed', { title, error })
       pushActivity({
         tone: 'warning',
         title: `${title} failed`,
-        detail: errorMessage(error),
+        detail: formatErrorDetail(error),
       })
     } finally {
       setBusy(null)
@@ -600,16 +646,86 @@ async function request<T = { message?: string }>(
   path: string,
   options: { method?: string; body?: Record<string, unknown> } = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: options.method ?? 'GET',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  })
-  const payload = await response.json()
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || payload.message || `HTTP ${response.status}`)
+  const method = options.method ?? 'GET'
+  const requestBody = options.body
+  const start = performance.now()
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: requestBody ? { 'Content-Type': 'application/json' } : undefined,
+      body: requestBody ? JSON.stringify(requestBody) : undefined,
+    })
+  } catch (cause) {
+    const durationMs = Math.round(performance.now() - start)
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    const apiError = new ApiError({
+      method,
+      path,
+      status: null,
+      statusText: '',
+      requestBody,
+      durationMs,
+      detail,
+      cause,
+    })
+    console.error('[codex-switcher] api failed', apiError)
+    throw apiError
   }
-  return payload as T
+
+  const rawText = await response.text()
+  let parsed: unknown = undefined
+  let parseError: unknown = undefined
+  if (rawText) {
+    try {
+      parsed = JSON.parse(rawText)
+    } catch (err) {
+      parseError = err
+    }
+  }
+  const durationMs = Math.round(performance.now() - start)
+  const responseBody = parsed ?? rawText
+  const parsedRecord =
+    parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+  const ok = response.ok && parsedRecord?.ok !== false
+
+  if (!ok) {
+    const serverMessage =
+      (typeof parsedRecord?.error === 'string' && parsedRecord.error) ||
+      (typeof parsedRecord?.message === 'string' && parsedRecord.message) ||
+      (parseError instanceof Error && `non-JSON response: ${truncate(rawText, 200)}`) ||
+      response.statusText ||
+      `HTTP ${response.status}`
+    const apiError = new ApiError({
+      method,
+      path,
+      status: response.status,
+      statusText: response.statusText,
+      requestBody,
+      responseBody,
+      durationMs,
+      detail: serverMessage,
+      cause: parseError,
+    })
+    console.error('[codex-switcher] api failed', apiError)
+    throw apiError
+  }
+
+  console.debug('[codex-switcher] api', {
+    method,
+    path,
+    status: response.status,
+    durationMs,
+    requestBody,
+    response: responseBody,
+  })
+  return (parsed ?? {}) as T
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}… (${text.length - max} more chars)`
 }
 
 function normalizeSession(session: Session): Session {
@@ -643,7 +759,15 @@ function formatCapturedAt() {
   }).format(new Date())
 }
 
-function errorMessage(error: unknown) {
+function formatErrorDetail(error: unknown): string {
+  if (error instanceof ApiError) {
+    const responseSnippet =
+      typeof error.responseBody === 'string'
+        ? truncate(error.responseBody, 200)
+        : ''
+    const tail = responseSnippet ? ` — body: ${responseSnippet}` : ''
+    return `${error.message} (${error.durationMs}ms)${tail}`
+  }
   return error instanceof Error ? error.message : String(error)
 }
 
