@@ -583,6 +583,58 @@ select:focus {
   background: #b7791f;
 }
 
+.activity-log {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.activity-log summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+  user-select: none;
+}
+
+.activity-log[open] summary {
+  color: var(--heading);
+}
+
+.activity-log dl {
+  margin: 6px 0 0;
+  display: grid;
+  gap: 4px 0;
+}
+
+.activity-log-row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.activity-log dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.activity-log dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.activity-log pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: #f6f7f6;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

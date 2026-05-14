@@ -32,11 +32,29 @@ type BackendState = {
   }
 }
 
+type ActivityLog = {
+  timestamp: string
+  method?: string
+  path?: string
+  status?: number | null
+  statusText?: string
+  durationMs?: number
+  requestBody?: unknown
+  responseBody?: unknown
+  serverMessage?: string
+  errorName?: string
+  errorMessage?: string
+  errorStack?: string
+  cause?: string
+  note?: string
+}
+
 type Activity = {
   id: number
   tone: 'success' | 'warning' | 'neutral'
   title: string
   detail: string
+  log?: ActivityLog
 }
 
 type IconName =
@@ -183,6 +201,7 @@ function App() {
         tone: 'warning',
         title: 'Backend unavailable',
         detail: formatErrorDetail(error),
+        log: logFromError(error),
       })
     }
   }, [pushActivity])
@@ -221,7 +240,7 @@ function App() {
 
   const runAction = async (
     title: string,
-    action: () => Promise<{ message?: string }>,
+    action: () => Promise<{ data: { message?: string }; log: ActivityLog }>,
     fallback?: () => void,
     tone: Activity['tone'] = 'success',
   ) => {
@@ -231,18 +250,20 @@ function App() {
         tone: 'warning',
         title: `${title} simulated`,
         detail: 'Backend is offline, so only the visible demo state changed.',
+        log: { timestamp: new Date().toISOString(), note: 'backend offline; no request made' },
       })
       return
     }
 
     setBusy(title)
     try {
-      const result = await action()
+      const { data, log } = await action()
       await loadState()
       pushActivity({
         tone,
         title,
-        detail: result.message || 'Backend operation completed.',
+        detail: data.message || 'Backend operation completed.',
+        log,
       })
     } catch (error) {
       console.error('[codex-switcher] action failed', { title, error })
@@ -250,6 +271,7 @@ function App() {
         tone: 'warning',
         title: `${title} failed`,
         detail: formatErrorDetail(error),
+        log: logFromError(error),
       })
     } finally {
       setBusy(null)
@@ -261,7 +283,7 @@ function App() {
     if (!target) return
     void runAction(
       `Switched to ${target.account}`,
-      () => request('/api/sessions/switch', { method: 'POST', body: { key: target.key } }),
+      () => requestWithLog('/api/sessions/switch', { method: 'POST', body: { key: target.key } }),
       () => setSessions((current) => current.map((session) => ({ ...session, active: session.id === id }))),
     )
   }
@@ -269,7 +291,7 @@ function App() {
   const prepareLogin = () => {
     void runAction(
       'Prepared clean login',
-      () => request('/api/auth/prepare-login', { method: 'POST' }),
+      () => requestWithLog('/api/auth/prepare-login', { method: 'POST' }),
       () => setSessions((current) => current.map((session) => ({ ...session, active: false }))),
       'warning',
     )
@@ -279,7 +301,7 @@ function App() {
     if (!activeSession) return
     void runAction(
       `Removed active auth for ${activeSession.account}`,
-      () => request('/api/auth/remove-active', { method: 'POST' }),
+      () => requestWithLog('/api/auth/remove-active', { method: 'POST' }),
       () => setSessions((current) => current.map((session) => ({ ...session, active: false }))),
       'warning',
     )
@@ -290,7 +312,7 @@ function App() {
     if (!target) return
     void runAction(
       `Refreshed limits for ${target.account}`,
-      () => request('/api/sessions/refresh', { method: 'POST', body: { key: target.key } }),
+      () => requestWithLog('/api/sessions/refresh', { method: 'POST', body: { key: target.key } }),
       () => refreshDemoSession(id),
       'neutral',
     )
@@ -299,7 +321,7 @@ function App() {
   const refreshAll = () => {
     void runAction(
       'Queued slow refresh for all accounts',
-      () => request('/api/sessions/refresh-all', { method: 'POST' }),
+      () => requestWithLog('/api/sessions/refresh-all', { method: 'POST' }),
       () => sessions.forEach((session) => refreshDemoSession(session.id)),
       'neutral',
     )
@@ -310,7 +332,7 @@ function App() {
     if (!target) return
     void runAction(
       `Removed saved session ${target.account}`,
-      () => request(`/api/sessions/${encodeURIComponent(target.key)}`, { method: 'DELETE' }),
+      () => requestWithLog(`/api/sessions/${encodeURIComponent(target.key)}`, { method: 'DELETE' }),
       () => setSessions((current) => current.filter((session) => session.id !== id)),
       'warning',
     )
@@ -324,7 +346,7 @@ function App() {
     void runAction(
       `Captured ${account}`,
       () =>
-        request('/api/sessions/capture', {
+        requestWithLog('/api/sessions/capture', {
           method: 'POST',
           body: { email: account, category: captureCategory.trim() },
         }),
@@ -588,6 +610,7 @@ function App() {
                   <div>
                     <strong>{entry.title}</strong>
                     <p>{entry.detail}</p>
+                    {entry.log && <ActivityLogDetails log={entry.log} />}
                   </div>
                 </li>
               ))}
@@ -645,9 +668,18 @@ async function request<T = { message?: string }>(
   path: string,
   options: { method?: string; body?: Record<string, unknown> } = {},
 ): Promise<T> {
+  const { data } = await requestWithLog<T>(path, options)
+  return data
+}
+
+async function requestWithLog<T = { message?: string }>(
+  path: string,
+  options: { method?: string; body?: Record<string, unknown> } = {},
+): Promise<{ data: T; log: ActivityLog }> {
   const method = options.method ?? 'GET'
   const requestBody = options.body
   const start = performance.now()
+  const timestamp = new Date().toISOString()
 
   let response: Response
   try {
@@ -719,7 +751,53 @@ async function request<T = { message?: string }>(
     requestBody,
     response: responseBody,
   })
-  return (parsed ?? {}) as T
+  const log: ActivityLog = {
+    timestamp,
+    method,
+    path,
+    status: response.status,
+    statusText: response.statusText,
+    durationMs,
+    requestBody,
+    responseBody,
+    serverMessage:
+      typeof parsedRecord?.message === 'string' ? (parsedRecord.message as string) : undefined,
+  }
+  return { data: (parsed ?? {}) as T, log }
+}
+
+function logFromError(error: unknown): ActivityLog {
+  const timestamp = new Date().toISOString()
+  if (error instanceof ApiError) {
+    return {
+      timestamp,
+      method: error.method,
+      path: error.path,
+      status: error.status,
+      statusText: error.statusText,
+      durationMs: error.durationMs,
+      requestBody: error.requestBody,
+      responseBody: error.responseBody,
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      cause:
+        error.cause instanceof Error
+          ? `${error.cause.name}: ${error.cause.message}`
+          : error.cause !== undefined
+            ? String(error.cause)
+            : undefined,
+    }
+  }
+  if (error instanceof Error) {
+    return {
+      timestamp,
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+    }
+  }
+  return { timestamp, errorMessage: String(error) }
 }
 
 function truncate(text: string, max: number): string {
@@ -768,6 +846,64 @@ function formatErrorDetail(error: unknown): string {
     return `${error.message} (${error.durationMs}ms)${tail}`
   }
   return error instanceof Error ? error.message : String(error)
+}
+
+function ActivityLogDetails({ log }: { log: ActivityLog }) {
+  const rows: Array<{ label: string; value: ReactElement | string }> = []
+
+  const add = (label: string, value: unknown) => {
+    if (value === undefined || value === null || value === '') return
+    if (typeof value === 'object') {
+      rows.push({
+        label,
+        value: <pre>{JSON.stringify(value, null, 2)}</pre>,
+      })
+    } else {
+      rows.push({ label, value: String(value) })
+    }
+  }
+
+  add('Time', log.timestamp)
+  if (log.method && log.path) {
+    add('Request', `${log.method} ${log.path}`)
+  } else {
+    add('Method', log.method)
+    add('Path', log.path)
+  }
+  if (log.status !== undefined) {
+    add(
+      'Status',
+      log.status === null
+        ? 'no response (network error)'
+        : log.statusText
+          ? `${log.status} ${log.statusText}`
+          : String(log.status),
+    )
+  }
+  add('Duration', log.durationMs !== undefined ? `${log.durationMs} ms` : undefined)
+  add('Server message', log.serverMessage)
+  add('Request body', log.requestBody)
+  add('Response body', log.responseBody)
+  add('Error', log.errorName ? `${log.errorName}: ${log.errorMessage ?? ''}` : log.errorMessage)
+  add('Cause', log.cause)
+  add('Stack', log.errorStack)
+  add('Note', log.note)
+
+  if (rows.length === 0) return null
+
+  return (
+    <details className="activity-log">
+      <summary>Show details</summary>
+      <dl>
+        {rows.map((row) => (
+          <div className="activity-log-row" key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  )
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
