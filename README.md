@@ -35,6 +35,23 @@ PYTHONPATH=src python -m codex_switcher.cli.main
 
 ## Run Web UI
 
+On macOS, start both servers and open Safari with:
+
+```bash
+./mac_neo_run.sh
+```
+
+The script can be run from any directory, uses `http://127.0.0.1:15173/` for the frontend and `http://127.0.0.1:18765/` for the backend, and stops both servers when you press `Ctrl-C`.
+
+It also supports explicit commands, which are useful for Alfred or Spotlight app wrappers:
+
+```bash
+/Users/Shared/Offline/Python/codex-switcher/mac_neo_run.sh start
+/Users/Shared/Offline/Python/codex-switcher/mac_neo_run.sh stop
+/Users/Shared/Offline/Python/codex-switcher/mac_neo_run.sh restart
+/Users/Shared/Offline/Python/codex-switcher/mac_neo_run.sh status
+```
+
 Start the backend:
 
 ```bash
