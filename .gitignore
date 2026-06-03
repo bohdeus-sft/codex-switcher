@@ -36,6 +36,9 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Local launcher runtime state
+.run/
+
 # Unit test / coverage reports
 htmlcov/
 .tox/

@@ -28,15 +28,27 @@ class MacOSLauncherScriptTest(unittest.TestCase):
         self.assertIn('VITE_API_BASE_URL="http://${BACKEND_HOST}:${BACKEND_PORT}"', contents)
         self.assertIn("http://127.0.0.1:${FRONTEND_PORT}/", contents)
         self.assertIn("open -a Safari", contents)
-        self.assertIn("trap cleanup EXIT INT TERM", contents)
+
+    def test_launcher_starts_detached_without_terminal_window(self) -> None:
+        contents = SCRIPT.read_text()
+
+        self.assertIn('LOG_DIR="${PROJECT_DIR}/logs"', contents)
+        self.assertIn('BACKEND_LOG_FILE="${LOG_DIR}/backend.log"', contents)
+        self.assertIn('FRONTEND_LOG_FILE="${LOG_DIR}/frontend.log"', contents)
+        self.assertIn('nohup', contents)
+        self.assertIn('>"${BACKEND_LOG_FILE}" 2>&1 &', contents)
+        self.assertIn('>"${FRONTEND_LOG_FILE}" 2>&1 &', contents)
+        self.assertIn("Started detached servers.", contents)
+        self.assertNotIn("trap cleanup EXIT INT TERM", contents)
+        self.assertNotIn("\n  wait\n", contents)
 
     def test_launcher_supports_stop_restart_and_status(self) -> None:
         contents = SCRIPT.read_text()
 
         self.assertIn('ACTION="${1:-start}"', contents)
-        self.assertIn('STATE_DIR="${HOME}/.codex/codex-switcher"', contents)
-        self.assertIn('BACKEND_PID_FILE="${STATE_DIR}/backend.pid"', contents)
-        self.assertIn('FRONTEND_PID_FILE="${STATE_DIR}/frontend.pid"', contents)
+        self.assertIn('RUN_DIR="${PROJECT_DIR}/.run"', contents)
+        self.assertIn('BACKEND_PID_FILE="${RUN_DIR}/backend.pid"', contents)
+        self.assertIn('FRONTEND_PID_FILE="${RUN_DIR}/frontend.pid"', contents)
         self.assertIn('write_pid "${BACKEND_PID_FILE}" "${BACKEND_PID}"', contents)
         self.assertIn('write_pid "${FRONTEND_PID_FILE}" "${FRONTEND_PID}"', contents)
         self.assertIn('stop_pid_file "${FRONTEND_PID_FILE}" "Frontend"', contents)

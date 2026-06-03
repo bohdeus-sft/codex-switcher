@@ -11,9 +11,12 @@ SCRIPT_DIR="$(cd -P "$(dirname "${SOURCE}")" && pwd)"
 PROJECT_DIR="${SCRIPT_DIR}"
 FRONTEND_DIR="${PROJECT_DIR}/src/codex_switcher/frontend"
 ACTION="${1:-start}"
-STATE_DIR="${HOME}/.codex/codex-switcher"
-BACKEND_PID_FILE="${STATE_DIR}/backend.pid"
-FRONTEND_PID_FILE="${STATE_DIR}/frontend.pid"
+RUN_DIR="${PROJECT_DIR}/.run"
+BACKEND_PID_FILE="${RUN_DIR}/backend.pid"
+FRONTEND_PID_FILE="${RUN_DIR}/frontend.pid"
+LOG_DIR="${PROJECT_DIR}/logs"
+BACKEND_LOG_FILE="${LOG_DIR}/backend.log"
+FRONTEND_LOG_FILE="${LOG_DIR}/frontend.log"
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-18765}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
@@ -22,25 +25,6 @@ FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}/"
 
 BACKEND_PID=""
 FRONTEND_PID=""
-STARTED=0
-
-cleanup() {
-  if [[ "${STARTED}" != "1" ]]; then
-    return
-  fi
-
-  if [[ -n "${FRONTEND_PID}" ]] && kill -0 "${FRONTEND_PID}" 2>/dev/null; then
-    kill "${FRONTEND_PID}" 2>/dev/null || true
-  fi
-
-  if [[ -n "${BACKEND_PID}" ]] && kill -0 "${BACKEND_PID}" 2>/dev/null; then
-    kill "${BACKEND_PID}" 2>/dev/null || true
-  fi
-
-  rm -f "${FRONTEND_PID_FILE}" "${BACKEND_PID_FILE}"
-}
-
-trap cleanup EXIT INT TERM
 
 usage() {
   printf 'Usage: %s [start|stop|restart|status]\n' "$(basename "$0")"
@@ -72,8 +56,12 @@ wait_for_url() {
   exit 1
 }
 
-ensure_state_dir() {
-  mkdir -p "${STATE_DIR}"
+ensure_run_dir() {
+  mkdir -p "${RUN_DIR}"
+}
+
+ensure_log_dir() {
+  mkdir -p "${LOG_DIR}"
 }
 
 write_pid() {
@@ -170,19 +158,20 @@ print_status() {
 }
 
 start_servers() {
-  ensure_state_dir
+  ensure_run_dir
+  ensure_log_dir
   require_command curl
   require_command npm
 
   cd "${PROJECT_DIR}"
 
   if command -v uv >/dev/null 2>&1; then
-    uv run python -m codex_switcher.backend.server --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" &
+    nohup uv run python -m codex_switcher.backend.server --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" >"${BACKEND_LOG_FILE}" 2>&1 &
   elif [[ -x "${PROJECT_DIR}/.venv/bin/python" ]]; then
-    PYTHONPATH="${PROJECT_DIR}/src" "${PROJECT_DIR}/.venv/bin/python" -m codex_switcher.backend.server --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" &
+    PYTHONPATH="${PROJECT_DIR}/src" nohup "${PROJECT_DIR}/.venv/bin/python" -m codex_switcher.backend.server --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" >"${BACKEND_LOG_FILE}" 2>&1 &
   else
     require_command python3
-    PYTHONPATH="${PROJECT_DIR}/src" python3 -m codex_switcher.backend.server --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" &
+    PYTHONPATH="${PROJECT_DIR}/src" nohup python3 -m codex_switcher.backend.server --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" >"${BACKEND_LOG_FILE}" 2>&1 &
   fi
   BACKEND_PID="$!"
   write_pid "${BACKEND_PID_FILE}" "${BACKEND_PID}"
@@ -193,10 +182,9 @@ start_servers() {
     npm install
   fi
 
-  VITE_API_BASE_URL="http://${BACKEND_HOST}:${BACKEND_PORT}" npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" --strictPort &
+  VITE_API_BASE_URL="http://${BACKEND_HOST}:${BACKEND_PORT}" nohup npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" --strictPort >"${FRONTEND_LOG_FILE}" 2>&1 &
   FRONTEND_PID="$!"
   write_pid "${FRONTEND_PID_FILE}" "${FRONTEND_PID}"
-  STARTED=1
 
   wait_for_url "http://${BACKEND_HOST}:${BACKEND_PORT}/api/state" "Backend"
   wait_for_url "${FRONTEND_URL}" "Frontend"
@@ -205,9 +193,9 @@ start_servers() {
 
   printf 'Backend:  http://%s:%s\n' "${BACKEND_HOST}" "${BACKEND_PORT}"
   printf 'Frontend: %s\n' "${FRONTEND_URL}"
-  printf 'Press Ctrl-C to stop both servers, or run %s stop.\n' "${PROJECT_DIR}/mac_neo_run.sh"
-
-  wait
+  printf 'Started detached servers.\n'
+  printf 'Logs: %s and %s\n' "${BACKEND_LOG_FILE}" "${FRONTEND_LOG_FILE}"
+  printf 'Stop with: %s stop\n' "${PROJECT_DIR}/mac_neo_run.sh"
 }
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
