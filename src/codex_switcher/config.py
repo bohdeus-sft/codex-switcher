@@ -12,7 +12,6 @@ class Config:
     auth_path: Path
     cache_path: Path
     codex_binary: Path
-    refresh_delay_seconds: int = 15
 
     @classmethod
     def load(cls) -> "Config":

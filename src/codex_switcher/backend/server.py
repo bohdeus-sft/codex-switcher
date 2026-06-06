@@ -97,14 +97,6 @@ def create_app(
     def switch_to(payload: SessionKeyRequest) -> dict[str, Any]:
         return _call_with_key(switcher.switch_to, payload.key)
 
-    @app.post("/api/sessions/refresh")
-    def refresh_one(payload: SessionKeyRequest) -> dict[str, Any]:
-        return _call_with_key(switcher.refresh_one, payload.key)
-
-    @app.post("/api/sessions/refresh-all")
-    def refresh_all() -> dict[str, Any]:
-        return _call(switcher.refresh_all)
-
     @app.delete("/api/sessions/{key:path}")
     def delete_session(key: str) -> dict[str, Any]:
         return _call_with_key(switcher.delete_session, key)

@@ -9,7 +9,7 @@ Local tools for switching Codex.app ChatGPT sessions on macOS.
 - Shows all accounts in one list with category labels.
 - Switches by closing Codex.app, removing `~/.codex/auth.json`, and copying the selected session into place.
 - Adds accounts without calling logout: prepare a clean login, sign in inside Codex.app, then capture the new `auth.json`.
-- Reads Codex rate limits slowly, one account at a time, through Codex app-server JSON-RPC using a temporary `CODEX_HOME`.
+- Reads the latest Codex rate limits for the active saved account before switching away or preparing a clean login.
 
 ## Layout
 
@@ -65,8 +65,6 @@ The backend listens on `http://127.0.0.1:8765` and exposes:
 - `POST /api/auth/remove-active`
 - `POST /api/sessions/capture`
 - `POST /api/sessions/switch`
-- `POST /api/sessions/refresh`
-- `POST /api/sessions/refresh-all`
 - `DELETE /api/sessions/{key}`
 
 Then start the frontend in another terminal:

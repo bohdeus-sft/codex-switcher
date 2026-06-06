@@ -59,11 +59,17 @@ class SwitcherService:
         }
 
     def prepare_login(self, open_codex: bool = False) -> dict[str, Any]:
+        previous = self._refresh_active_before_leaving()
         self.codex_app.prepare_login()
         if open_codex:
             time.sleep(2)
             self.codex_app.open()
-        return self._ok("Prepared clean login. Active auth.json removed locally.")
+        return {
+            **self._ok(
+                f"{self._leaving_message(previous, 'preparing clean login')} Active auth.json removed locally."
+            ),
+            **self._leaving_payload(previous),
+        }
 
     def open_codex(self) -> dict[str, Any]:
         self.codex_app.open()
@@ -90,9 +96,15 @@ class SwitcherService:
         return self._ok(f"Opened {path} in Finder.")
 
     def remove_active_auth(self) -> dict[str, Any]:
+        previous = self._refresh_active_before_leaving()
         self.codex_app.stop()
         self.codex_app.remove_active_auth()
-        return self._ok("Active auth.json removed locally.")
+        return {
+            **self._ok(
+                f"{self._leaving_message(previous, 'removing active auth')} Active auth.json removed locally."
+            ),
+            **self._leaving_payload(previous),
+        }
 
     def capture_current(self, email: str, category: str = "") -> dict[str, Any]:
         destination = self.store.destination_for(email, category)
@@ -104,33 +116,20 @@ class SwitcherService:
 
     def switch_to(self, key: str) -> dict[str, Any]:
         session = self._session_by_key(key)
+        previous = self._refresh_active_before_leaving(exclude_key=session.key)
         self.codex_app.switch_to(session)
+        if previous is None:
+            message = f"Switched to {session.email}. No different saved active account was found to refresh."
+        else:
+            previous_session, snapshot = previous
+            message = (
+                f"Switched from {previous_session.email} to {session.email}. "
+                f"{self._limit_update_message(previous_session, snapshot, 'switching')}"
+            )
         return {
-            **self._ok(f"Switched to {session.email}."),
+            **self._ok(message),
             "session": self._session_to_json(session),
-        }
-
-    def refresh_one(self, key: str) -> dict[str, Any]:
-        session = self._session_by_key(key)
-        snapshot = self.limit_reader.read(session)
-        self.snapshots[self.store.cache_key(session)] = snapshot
-        self.store.save_cache(self.snapshots)
-        return {
-            **self._ok(f"Refreshed limits for {session.email}."),
-            "session": self._session_to_json(session, snapshot),
-        }
-
-    def refresh_all(self) -> dict[str, Any]:
-        sessions = self.store.list_sessions()
-        updated: list[dict[str, Any]] = []
-        for session in sessions:
-            snapshot = self.limit_reader.read(session)
-            self.snapshots[self.store.cache_key(session)] = snapshot
-            updated.append(self._session_to_json(session, snapshot))
-        self.store.save_cache(self.snapshots)
-        return {
-            **self._ok(f"Refreshed {len(updated)} session(s)."),
-            "sessions": updated,
+            **self._leaving_payload(previous),
         }
 
     def delete_session(self, key: str) -> dict[str, Any]:
@@ -141,6 +140,45 @@ class SwitcherService:
             raise ValueError("session path is outside sessions directory")
         session.path.unlink()
         return self._ok(f"Deleted saved session {session.email}.")
+
+    def _refresh_active_before_leaving(
+        self,
+        exclude_key: str | None = None,
+    ) -> tuple[Session, LimitSnapshot] | None:
+        active = self._active_session(exclude_key)
+        if active is None:
+            return None
+        snapshot = self.limit_reader.read(active)
+        self.snapshots[self.store.cache_key(active)] = snapshot
+        self.store.save_cache(self.snapshots)
+        return active, snapshot
+
+    def _active_session(self, exclude_key: str | None = None) -> Session | None:
+        for session in self.store.list_sessions():
+            if session.active and session.key != exclude_key:
+                return session
+        return None
+
+    def _leaving_message(
+        self,
+        previous: tuple[Session, LimitSnapshot] | None,
+        action: str,
+    ) -> str:
+        if previous is None:
+            return f"No saved active account was found to refresh before {action}."
+        session, snapshot = previous
+        return self._limit_update_message(session, snapshot, action)
+
+    def _limit_update_message(self, session: Session, snapshot: LimitSnapshot, action: str) -> str:
+        if snapshot.error:
+            return f"Limit refresh for {session.email} failed before {action}: {snapshot.error}"
+        return f"Updated limits for {session.email} before {action}."
+
+    def _leaving_payload(self, previous: tuple[Session, LimitSnapshot] | None) -> dict[str, Any]:
+        if previous is None:
+            return {}
+        session, snapshot = previous
+        return {"switchedFrom": self._session_to_json(session, snapshot)}
 
     def _session_by_key(self, key: str) -> Session:
         for session in self.store.list_sessions():
