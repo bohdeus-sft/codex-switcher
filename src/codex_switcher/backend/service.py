@@ -26,7 +26,10 @@ class SwitcherService:
         self.snapshots = self.store.load_cache()
 
     def _migrate_legacy_switcher_home(self) -> None:
-        legacy = self.config.codex_home / "codex-switcher"
+        for legacy in self.config.legacy_switcher_homes:
+            self._migrate_switcher_home(legacy)
+
+    def _migrate_switcher_home(self, legacy: Path) -> None:
         target = self.config.switcher_home
         if legacy == target or not legacy.exists():
             return

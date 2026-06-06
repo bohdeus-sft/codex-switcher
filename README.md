@@ -4,7 +4,7 @@ Local tools for switching Codex.app ChatGPT sessions on macOS.
 
 ## What it does
 
-- Stores saved sessions under `~/.codex/codex-switcher/sessions`.
+- Stores saved sessions under `/Users/Shared/Offline/codex-switcher/sessions`.
 - Supports categories with folders, for example `sessions/work/name@example.com.json`.
 - Shows all accounts in one list with category labels.
 - Switches by closing Codex.app, removing `~/.codex/auth.json`, and copying the selected session into place.
