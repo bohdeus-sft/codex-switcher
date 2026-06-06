@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from datetime import datetime
 
 from rich.align import Align
@@ -34,7 +33,7 @@ class CodexSwitcherTui:
             self._render(sessions)
             choice = Prompt.ask(
                 "Action",
-                choices=["s", "a", "c", "r", "R", "q"],
+                choices=["s", "a", "c", "q"],
                 default="s",
                 show_choices=False,
             )
@@ -47,10 +46,6 @@ class CodexSwitcherTui:
                 self._prepare_login()
             elif choice == "c":
                 self._capture_current()
-            elif choice == "r":
-                self._refresh_next(sessions)
-            elif choice == "R":
-                self._refresh_all_slowly(sessions)
 
     def _render(self, sessions: list[Session]) -> None:
         self.console.clear()
@@ -89,8 +84,6 @@ class CodexSwitcherTui:
                     "[bold]s[/bold] switch  "
                     "[bold]a[/bold] add/login  "
                     "[bold]c[/bold] capture current  "
-                    "[bold]r[/bold] refresh next  "
-                    "[bold]R[/bold] refresh all slowly  "
                     "[bold]q[/bold] quit"
                 )
             )
@@ -102,6 +95,9 @@ class CodexSwitcherTui:
             return
 
         self.console.print(f"Switching to [bold]{session.email}[/bold]...")
+        previous = self._refresh_active_before_leaving(sessions, exclude_key=session.key)
+        if previous is not None:
+            self.console.print(f"Switching from [bold]{previous.email}[/bold] to [bold]{session.email}[/bold].")
         self.codex_app.switch_to(session)
         self.console.print("[green]Done.[/green] Codex.app was closed; open it again when ready.")
         self._pause()
@@ -110,6 +106,7 @@ class CodexSwitcherTui:
         self.console.print("This closes Codex.app and removes the active auth.json. Do not use logout inside Codex.")
         if not Confirm.ask("Prepare a clean login?", default=True):
             return
+        self._refresh_active_before_leaving(self.store.list_sessions())
         self.codex_app.prepare_login()
         if Confirm.ask("Open Codex.app now for login?", default=True):
             self.codex_app.open()
@@ -128,28 +125,6 @@ class CodexSwitcherTui:
             self.console.print(f"[green]Saved:[/green] {destination}")
         self._pause()
 
-    def _refresh_next(self, sessions: list[Session]) -> None:
-        session = self._next_stale_session(sessions)
-        if session is None:
-            self.console.print("[yellow]No sessions to refresh.[/yellow]")
-            self._pause()
-            return
-        self._refresh_one(session)
-        self._pause()
-
-    def _refresh_all_slowly(self, sessions: list[Session]) -> None:
-        if not sessions:
-            self.console.print("[yellow]No sessions to refresh.[/yellow]")
-            self._pause()
-            return
-        delay = IntPrompt.ask("Delay between accounts, seconds", default=self.config.refresh_delay_seconds)
-        for index, session in enumerate(sessions, start=1):
-            self._refresh_one(session, preserve_cache_on_error=True)
-            if index < len(sessions):
-                self.console.print(f"[dim]Waiting {delay}s before next account...[/dim]")
-                time.sleep(max(0, delay))
-        self._pause()
-
     def _refresh_one(self, session: Session, preserve_cache_on_error: bool = False) -> None:
         self.console.print(f"Reading limits for [bold]{session.email}[/bold] ({session.display_category})...")
         snapshot = self.limit_reader.read(session)
@@ -165,15 +140,17 @@ class CodexSwitcherTui:
         else:
             self.console.print("[green]Limits updated.[/green]")
 
-    def _next_stale_session(self, sessions: list[Session]) -> Session | None:
-        if not sessions:
-            return None
-        return min(
-            sessions,
-            key=lambda session: self.snapshots.get(self.store.cache_key(session)).fetched_at
-            if self.snapshots.get(self.store.cache_key(session))
-            else 0,
-        )
+    def _refresh_active_before_leaving(
+        self,
+        sessions: list[Session],
+        exclude_key: str | None = None,
+    ) -> Session | None:
+        for session in sessions:
+            if session.active and session.key != exclude_key:
+                self._refresh_one(session)
+                return session
+        self.console.print("[dim]No saved active account to refresh before leaving.[/dim]")
+        return None
 
     def _pick_session(self, sessions: list[Session]) -> Session | None:
         if not sessions:

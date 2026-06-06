@@ -334,26 +334,6 @@ function App() {
     )
   }
 
-  const refreshSession = (id: string) => {
-    const target = sessions.find((session) => session.id === id)
-    if (!target) return
-    void runAction(
-      `Refreshed limits for ${target.account}`,
-      () => requestWithLog('/api/sessions/refresh', { method: 'POST', body: { key: target.key } }),
-      () => refreshDemoSession(id),
-      'neutral',
-    )
-  }
-
-  const refreshAll = () => {
-    void runAction(
-      'Queued slow refresh for all accounts',
-      () => requestWithLog('/api/sessions/refresh-all', { method: 'POST' }),
-      () => sessions.forEach((session) => refreshDemoSession(session.id)),
-      'neutral',
-    )
-  }
-
   const forgetSession = (id: string) => {
     const target = sessions.find((session) => session.id === id)
     if (!target) return
@@ -391,20 +371,6 @@ function App() {
     setCaptureCodex('')
     setCaptureCategory('')
     setCaptureOpen(false)
-  }
-
-  const refreshDemoSession = (id: string) => {
-    setSessions((current) =>
-      current.map((session, index) => {
-        if (session.id !== id) return session
-        const base = (index + 1) * 17 + session.account.length
-        return {
-          ...session,
-          fiveHour: { remaining: 35 + (base % 61), reset: `${1 + (base % 4)}:${String((base * 7) % 60).padStart(2, '0')}` },
-          weekly: { remaining: 42 + (base % 50), reset: ['Fri 12:00', 'Sat 16:30', 'Mon 09:00'][base % 3] },
-        }
-      }),
-    )
   }
 
   const captureDemoSession = (account: string, cleanCategory: string) => {
@@ -470,7 +436,7 @@ function App() {
         <header className="topbar">
           <div>
             <h1>Accounts</h1>
-            <p>Switch, capture, and refresh saved Codex.app sessions from one place.</p>
+          <p>Switch, capture, and track saved Codex.app sessions from one place.</p>
           </div>
           <div className="topbar-actions">
             <button className="button ghost" type="button" onClick={() => void loadState()} disabled={busy !== null}>
@@ -523,7 +489,7 @@ function App() {
         <section className="status-strip" aria-label="Session summary">
           <Metric label="Captured" value={String(stats.captured)} />
           <Metric label="Limits loaded" value={String(stats.loadedLimits)} />
-          <Metric label="Need refresh" value={String(stats.staleLimits)} />
+          <Metric label="Limits missing" value={String(stats.staleLimits)} />
         </section>
 
         <section className="command-center" id="capture">
@@ -639,7 +605,6 @@ function App() {
                 <LimitCell window={session.weekly} />
                 <div className="row-actions" role="cell">
                   <IconButton label="Switch" icon="switch" onClick={() => switchToSession(session.id)} disabled={busy !== null} />
-                  <IconButton label="Refresh" icon="refresh" onClick={() => refreshSession(session.id)} disabled={busy !== null} />
                   <IconButton label="Forget" icon="trash" onClick={() => forgetSession(session.id)} disabled={busy !== null} />
                 </div>
               </div>
@@ -652,12 +617,8 @@ function App() {
             <div className="section-header compact">
               <div>
                 <span className="section-label">Rate limits</span>
-                <h2>Slow refresh queue</h2>
+                <h2>Last known limits</h2>
               </div>
-              <button className="button ghost" type="button" onClick={refreshAll} disabled={busy !== null}>
-                <Icon name="refresh" />
-                Refresh all
-              </button>
             </div>
             <ol className="refresh-list">
               {sessions.map((session, index) => (

@@ -54,8 +54,6 @@ class BackendApiTest(unittest.TestCase):
         self.assertEqual(200, client.post("/api/auth/remove-active").status_code)
         self.assertEqual(200, client.post("/api/sessions/capture", json={"email": "new@example.com", "category": "qa"}).status_code)
         self.assertEqual(200, client.post("/api/sessions/switch", json={"key": "work/dev@example.com"}).status_code)
-        self.assertEqual(200, client.post("/api/sessions/refresh", json={"key": "work/dev@example.com"}).status_code)
-        self.assertEqual(200, client.post("/api/sessions/refresh-all").status_code)
         self.assertEqual(200, client.delete("/api/sessions/work%2Fdev@example.com").status_code)
 
         self.assertEqual(
@@ -65,8 +63,6 @@ class BackendApiTest(unittest.TestCase):
                 ("remove_active_auth",),
                 ("capture_current", "new@example.com", "qa"),
                 ("switch_to", "work/dev@example.com"),
-                ("refresh_one", "work/dev@example.com"),
-                ("refresh_all",),
                 ("delete_session", "work/dev@example.com"),
             ],
             service.calls,
@@ -153,14 +149,6 @@ class FakeService:
     def switch_to(self, key: str) -> dict[str, object]:
         self.calls.append(("switch_to", key))
         return {"ok": True, "message": "switched"}
-
-    def refresh_one(self, key: str) -> dict[str, object]:
-        self.calls.append(("refresh_one", key))
-        return {"ok": True, "message": "refreshed"}
-
-    def refresh_all(self) -> dict[str, object]:
-        self.calls.append(("refresh_all",))
-        return {"ok": True, "message": "refreshed all"}
 
     def delete_session(self, key: str) -> dict[str, object]:
         self.calls.append(("delete_session", key))
